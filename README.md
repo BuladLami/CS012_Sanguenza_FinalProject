@@ -44,6 +44,37 @@ python run_cluster.py            # terminal 1: cluster + live logs of all 13 pro
 python simulate.py               # terminal 2: the scenarios
 ```
 
+### Simulation UI: how a site gets recommended
+
+```bash
+python run_cluster.py
+```
+
+Then open **http://127.0.0.1:8000/ui** and press **Run all**, or run the steps one at a time:
+
+1. **Ingest candidate sites.** The 1,502 sites are split by barangay and replicated to 3 nodes per shard.
+2. **Score every site.** The 4-round distributed job runs. The map fills in shard by shard: hard gates first,
+   then suitability classes.
+3. **Recommend top sites.** Each shard returns its best eligible sites and the gateway merges them. Pick the
+   number of sites and an area (the whole district or one barangay).
+4. **Save CHO shortlist.** The shortlist goes over the VPN to the CHO private cloud.
+
+Each step calls the real cluster, then replays that request's distributed trace. The topology shows every hop
+between nodes, the event log lists each event, and a plain-language caption explains what each node just did.
+You can pause, step through one event at a time, skip to the end, or change the speed. Each recommended site
+has a **"Why this site?"** panel that shows the full calculation:
+
+* the hard gates
+* each weighted factor's contribution
+* S → S′ rescaling with the run's district-wide bounds
+* the class threshold, and whether the site is above its class's median cut (which sets its level)
+* its rank after the merge
+
+![Recommendation step in the UI](docs/ui_recommend.png)
+
+The UI uses no external libraries or CDNs, so it works offline. It also works if you start it after
+`python simulate.py --keep`: it picks up the data already in the cluster.
+
 Useful options:
 
 ```bash
@@ -103,6 +134,7 @@ node/             shard replica: replication log, fencing, catch-up, shard-local
 vault/            CHO private-cloud vault with VPN check and audit trail
 collector/        observability collector and trace reconstruction
 tools/trace_view.py   text waterfall of a trace
+ui/               simulation UI (served by the gateway at /ui): index.html, app.js, styles.css
 data/talomo_site_features.csv   1,502 sites: extracted features + the notebook's baseline score
 run_cluster.py    launches all 13 processes
 simulate.py       scenario driver
@@ -121,6 +153,9 @@ tests/            unit tests for the formula library
 | GET | `/api/v1/export?consistency=` | web-map dataset (edge cached) |
 | POST/GET | `/api/v1/private/dossiers` | CHO-only, private cloud via VPN (`X-Role: cho-planner`, `X-Api-Key: cho-demo-key`) |
 | GET | `/cluster/status`, `/cluster/metrics`, `/cluster/health` | topology, membership, lag, breakers, metrics |
+| GET | `/api/v1/jobs/last` | global statistics of the latest scoring run (bounds, class cuts) |
+| GET | `/observability/traces/{id}`, `/observability/events` | read-only proxy to the collector (used by the UI) |
+| GET | `/ui` | simulation UI |
 | POST | `/admin/chaos/{node_id}` | fault injection |
 
 ## Data note

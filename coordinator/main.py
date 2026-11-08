@@ -22,8 +22,11 @@ import heapq
 import time
 from typing import Any, Dict, List, Optional
 
+from pathlib import Path
+
 from fastapi import FastAPI, Header, HTTPException
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
+from fastapi.staticfiles import StaticFiles
 
 from common import scoring as sc
 from common import telemetry, topology
@@ -40,6 +43,7 @@ tel = telemetry.init(NODE_ID, topology.node("collector").url)
 net = Network(NODE_ID)
 app = FastAPI(title="POLARIS Cloud Gateway / Coordinator")
 telemetry.install(app, tel)
+ROOT = Path(__file__).resolve().parent.parent
 
 
 # --------------------------------------------------------------------------
@@ -414,12 +418,15 @@ async def _run_job() -> Dict[str, Any]:
     levels = {lv: sum(r["level_counts"][lv] for r in r4.values()) for lv in r4[next(iter(r4))]["level_counts"]}
     EDGE_CACHE.clear()
     LAST_RUN.clear()
-    LAST_RUN.update(run_id=run_id, finished=time.time(), class_counts=counts)
+    LAST_RUN.update(run_id=run_id, finished=time.time(), class_counts=counts,
+                    score_bounds_raw=sb, class_cuts=cuts, feature_bounds=fb,
+                    eligible=eligible, sites=n_sites)
     total = round((time.time() - t0) * 1000, 1)
     telemetry.event("JOB_COMPLETED", run_id=run_id, sites=n_sites, eligible=eligible,
                     gated=n_sites - eligible, class_counts=counts, total_ms=total)
     return {"run_id": run_id, "sites": n_sites, "eligible": eligible, "gated": n_sites - eligible,
             "class_counts": counts, "level_counts": levels, "score_bounds_raw": sb,
+            "class_cuts": cuts, "feature_bounds": fb,
             "phase_ms": phases, "total_ms": total,
             "shard_writes": {s: r["write"] for s, r in r4.items()},
             "trace_id": telemetry.trace_id_var.get()}
@@ -486,6 +493,22 @@ async def update_hazard(site_id: str, upd: HazardUpdate):
             "score refreshed on the next scoring job"}
 
 
+RECOMMEND_FIELDS = (
+    "site_id", "barangay", "score", "suitability_class", "recommendation_level",
+    "recommendation_label", "latitude", "longitude",
+    # explanation fields (why the site ranks where it does)
+    "building_density", "road_distance", "facility_distance", "shoreline_distance",
+    "flood_susceptibility", "landslide_susceptibility", "storm_surge_susceptibility",
+    "factors_normalized", "raw_hazard_integrated", "shoreline_excluded",
+    "high_hazard_excluded", "recommendation_eligible", "run_id", "_v")
+
+
+@app.get("/api/v1/jobs/last")
+async def last_job():
+    """Global statistics of the latest scoring run (bounds, class cuts) for explanations."""
+    return LAST_RUN or {"run_id": None}
+
+
 @app.get("/api/v1/recommend")
 async def recommend(top: int = 3, barangay: Optional[str] = None, consistency: str = "eventual"):
     shards = [topology.shard_for_barangay(barangay)] if barangay else list(SHARDS)
@@ -511,9 +534,7 @@ async def recommend(top: int = 3, barangay: Optional[str] = None, consistency: s
                         missing_barangays=[b for s in missing for b in topology.SHARD_MAP[s]])
     telemetry.event("SCATTER_GATHER_MERGED", shards_answered=list(ok), returned=len(merged),
                     served_by={s: r["node_id"] for s, r in ok.items()})
-    return {"top": [{k: x.get(k) for k in ("site_id", "barangay", "score", "suitability_class",
-                                           "recommendation_level", "recommendation_label",
-                                           "latitude", "longitude")} for x in merged],
+    return {"top": [{k: x.get(k) for k in RECOMMEND_FIELDS} for x in merged],
             "degraded": bool(missing), "missing_shards": missing,
             "served_by": {s: r["node_id"] for s, r in ok.items()}, "consistency": consistency}
 
@@ -585,3 +606,40 @@ async def read_dossier(dossier_id: str, x_role: Optional[str] = Header(default=N
                        x_api_key: Optional[str] = Header(default=None)):
     authorize(x_role, x_api_key)
     return await vault_call("GET", f"/dossiers/{dossier_id}", x_role or "?")
+
+
+# --------------------------------------------------------------------------
+# Simulation UI (static page) and read-only observability proxy
+# --------------------------------------------------------------------------
+@app.get("/")
+async def root():
+    return RedirectResponse("/ui/")
+
+
+@app.get("/ui/data/sites.csv")
+async def ui_dataset():
+    return FileResponse(ROOT / "data" / "talomo_site_features.csv", media_type="text/csv")
+
+
+@app.get("/observability/traces/{trace_id}")
+async def obs_trace(trace_id: str):
+    try:
+        return await net.call("collector", "GET", f"/traces/{trace_id}", timeout=2.0,
+                              use_breaker=False, quiet=True)
+    except NodeUnavailable as exc:
+        raise unavailable({"error": f"collector unreachable: {exc.reason}"})
+
+
+@app.get("/observability/events")
+async def obs_events(since: float = 0.0, names: Optional[str] = None, limit: int = 300):
+    params: Dict[str, Any] = {"since": since, "limit": limit}
+    if names:
+        params["names"] = names
+    try:
+        return await net.call("collector", "GET", "/events", params=params, timeout=2.0,
+                              use_breaker=False, quiet=True)
+    except NodeUnavailable as exc:
+        raise unavailable({"error": f"collector unreachable: {exc.reason}"})
+
+
+app.mount("/ui", StaticFiles(directory=ROOT / "ui", html=True), name="ui")

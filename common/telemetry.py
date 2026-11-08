@@ -44,7 +44,8 @@ span_id_var: ContextVar[str] = ContextVar("span_id", default="-")
 
 # Health checks and telemetry traffic are not traced (standard sampling rule),
 # otherwise heartbeats would drown the interesting events.
-UNTRACED_PATHS = ("/health", "/control/heartbeat", "/telemetry", "/metrics", "/favicon.ico")
+UNTRACED_PATHS = ("/health", "/control/heartbeat", "/telemetry", "/metrics", "/favicon.ico",
+                  "/ui", "/observability", "/cluster/status", "/docs", "/openapi.json")
 
 try:  # Windows consoles default to cp1252; never crash on a barangay name.
     sys.stdout.reconfigure(errors="replace")  # type: ignore[attr-defined]

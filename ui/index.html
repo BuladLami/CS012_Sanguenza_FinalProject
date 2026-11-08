@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>POLARIS Cloud Simulation</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">
+    <span class="logo" aria-hidden="true">✦</span>
+    <div>
+      <h1>POLARIS Cloud</h1>
+      <p>How a health-facility site gets recommended, step by step, across a distributed cluster</p>
+    </div>
+  </div>
+  <div class="cluster-chip" id="clusterChip" title="Live membership from the gateway's failure detector">
+    <span class="dot"></span><span id="clusterText">connecting…</span>
+  </div>
+</header>
+
+<main class="layout">
+  <!-- Sequence -->
+  <section class="panel steps" aria-label="Simulation sequence">
+    <div class="panel-head">
+      <h2>Sequence</h2>
+      <button class="btn ghost" id="runAll" title="Run steps 1 to 3 in order">Run all</button>
+    </div>
+    <ol class="step-list" id="stepList"></ol>
+    <div class="params">
+      <label>Top N
+        <select id="topN"><option>3</option><option selected>5</option><option>10</option></select>
+      </label>
+      <label>Area
+        <select id="barangay"><option value="">Whole district</option></select>
+      </label>
+    </div>
+  </section>
+
+  <!-- Topology -->
+  <section class="panel topo" aria-label="Cluster topology">
+    <div class="panel-head">
+      <h2>Cluster</h2>
+      <span class="hint">3 shards × 3 replicas · rows = availability zones · <b class="lead-key">L</b> = leader</span>
+    </div>
+    <svg id="topology" viewBox="0 0 640 400" role="img" aria-label="Topology diagram"></svg>
+  </section>
+
+  <!-- Map -->
+  <section class="panel map" aria-label="Candidate sites map">
+    <div class="panel-head">
+      <h2>Candidate sites</h2>
+      <div class="seg" id="colorMode" role="group" aria-label="Colour sites by">
+        <button data-mode="auto" class="on">Auto</button>
+        <button data-mode="shard">Shard</button>
+        <button data-mode="class">Class</button>
+      </div>
+    </div>
+    <div class="map-wrap"><canvas id="map"></canvas><div class="map-empty" id="mapEmpty">Run step 1 to load the 1,502 sites</div></div>
+    <div class="legend" id="legend"></div>
+  </section>
+
+  <!-- Narration + playback -->
+  <section class="panel narration" aria-live="polite">
+    <div class="narr-text">
+      <div class="narr-step" id="narrStep">Ready</div>
+      <div class="narr-main" id="narrMain">Press <b>Run</b> on step 1. Each step calls the real cluster, then replays its distributed trace so you can follow every hop.</div>
+    </div>
+    <div class="playback">
+      <button class="btn icon" id="playPause" title="Pause / resume replay" aria-label="Pause">❚❚</button>
+      <button class="btn icon" id="stepOnce" title="Next event (while paused)" aria-label="Next event">⏭</button>
+      <button class="btn icon" id="skipEnd" title="Skip to the end of this replay" aria-label="Skip">⏩</button>
+      <label class="speed">Speed
+        <select id="speed">
+          <option value="0.5">0.5×</option><option value="1" selected>1×</option>
+          <option value="2">2×</option><option value="4">4×</option>
+        </select>
+      </label>
+      <div class="progress"><div id="progressBar"></div></div>
+      <span class="counter" id="counter">0 / 0</span>
+    </div>
+  </section>
+
+  <!-- Event log -->
+  <section class="panel log" aria-label="Event log">
+    <div class="panel-head">
+      <h2>Event log</h2>
+      <span class="hint" id="traceId">trace —</span>
+    </div>
+    <ol class="events" id="events"></ol>
+  </section>
+
+  <!-- Results -->
+  <section class="panel results" aria-label="Results">
+    <div class="panel-head"><h2 id="resultsTitle">Results</h2></div>
+    <div id="results" class="results-body"><p class="muted">Results of each step appear here.</p></div>
+  </section>
+</main>
+
+<footer class="foot">
+  Data: Talomo District, Davao City · 250 m candidate grid · OSM 2026-07-29 + Project NOAH ·
+  POLARIS is advisory; siting decisions remain with the City Health Office.
+</footer>
+<script src="app.js"></script>
+</body>
+</html>
